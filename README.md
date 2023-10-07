@@ -1,6 +1,6 @@
 ## Complex Valued Transformer (wip)
 
-Implementation of the transformer proposed in <a href="https://arxiv.org/abs/2306.09827">Building Blocks for a Complex-Valued Transformer Architecture</a>
+Implementation of the transformer proposed in <a href="https://arxiv.org/abs/2306.09827">Building Blocks for a Complex-Valued Transformer Architecture</a>. Will not bother with complex layernorm, as RMS norm is now much more popular.
 
 ## Citations
 
