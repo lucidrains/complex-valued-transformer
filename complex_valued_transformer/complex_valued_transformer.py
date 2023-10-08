@@ -32,12 +32,7 @@ def eilers_complex_attention(
 
     # following eq 4
 
-    q = rearrange(q, 'b h i d -> b h i 1 d')
-    k = rearrange(k, 'b h j d -> b h 1 j d')
-
-    qk_phase_diff = q.angle() - k.angle()
-
-    sim = (q.abs() * k.abs() * torch.cos(qk_phase_diff)).sum(dim = -1)
+    sim = einsum('b h i d c, b h j d c -> b h i j', torch.view_as_real(q), torch.view_as_real(k))
     sim = sim * scale
 
     if exists(mask):
