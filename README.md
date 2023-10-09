@@ -83,3 +83,14 @@ logits = transformer(ids) # (2, 1024, 256)
     year    = {2022}
 }
 ```
+
+```bibtex
+@article{So2021PrimerSF,
+    title   = {Primer: Searching for Efficient Transformers for Language Modeling},
+    author  = {David R. So and Wojciech Ma'nke and Hanxiao Liu and Zihang Dai and Noam M. Shazeer and Quoc V. Le},
+    journal = {ArXiv},
+    year    = {2021},
+    volume  = {abs/2109.08668},
+    url     = {https://api.semanticscholar.org/CorpusID:237563187}
+}
+```

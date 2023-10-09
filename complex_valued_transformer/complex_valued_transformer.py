@@ -169,19 +169,22 @@ class ComplexRMSNorm(Module):
 # https://arxiv.org/abs/1511.06464v4
 
 class ModReLU(Module):
-    def __init__(self):
+    def __init__(self, relu_squared = False):
         super().__init__()
+        self.pow = 2 if relu_squared else 1
         self.bias = nn.Parameter(torch.tensor(0.))
 
     def forward(self, x):
-        return F.relu(torch.abs(x) + self.bias) * torch.exp(1.j * torch.angle(x))
+        real = F.relu(torch.abs(x) + self.bias) ** self.pow
+        imag = torch.exp(1.j * torch.angle(x))
+        return real + imag
 
 
-def ComplexFeedForward(dim, mult = 4):
+def ComplexFeedForward(dim, mult = 4, relu_squared = False):
     dim_inner = dim * mult
     return nn.Sequential(
         nn.Linear(dim, dim_inner, dtype = cfloat),
-        ModReLU(),
+        ModReLU(relu_squared = relu_squared),
         nn.Linear(dim_inner, dim, dtype = cfloat)
     )
 
@@ -198,6 +201,7 @@ class ComplexTransformer(Module):
         dim_head = 32,
         heads = 8,
         ff_mult = 4,
+        relu_squared = True,
         complete_complex = False
     ):
         super().__init__()
@@ -213,7 +217,7 @@ class ComplexTransformer(Module):
                 ComplexRMSNorm(dim),
                 ComplexMultiheadAttention(dim = dim, dim_head = dim_head, heads = heads, causal = causal, complete_complex = complete_complex),
                 ComplexRMSNorm(dim),
-                ComplexFeedForward(dim = dim, mult = ff_mult)
+                ComplexFeedForward(dim = dim, mult = ff_mult, relu_squared = relu_squared)
             ]))
 
         self.norm = ComplexRMSNorm(dim)
