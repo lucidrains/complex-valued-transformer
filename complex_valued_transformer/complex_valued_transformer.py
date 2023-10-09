@@ -18,6 +18,15 @@ def exists(v):
 def default(v, d):
     return v if exists(v) else d
 
+# helper tensor functions
+
+def modulate_with_rotation(x, m):
+    if m.dtype == cfloat:
+        m = m.abs()
+
+    rot = m.cos() + 1.j * m.sin()
+    return x * rot
+
 # complex attention
 # https://arxiv.org/abs/2306.09827
 

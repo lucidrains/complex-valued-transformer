@@ -4,5 +4,6 @@ from complex_valued_transformer.complex_valued_transformer import (
     ComplexFeedForward,
     ComplexTransformer,
     complex_attention_real,
-    complex_attention_complete
+    complex_attention_complete,
+    modulate_with_rotation
 )
