@@ -5,7 +5,7 @@ import torch
 from torch import cfloat
 import torch.nn.functional as F
 from torch import nn, einsum, Tensor
-from torch.nn import Module
+from torch.nn import Module, ModuleList
 
 from einops import rearrange, repeat, reduce
 from einops.layers.torch import Rearrange
@@ -164,3 +164,57 @@ class ComplexRMSNorm(Module):
 
     def forward(self, x):
         return F.normalize(x, dim = -1) * self.gamma * self.scale
+
+# feedforward with mod relu
+# https://arxiv.org/abs/1511.06464v4
+
+class ModReLU(Module):
+    def __init__(self):
+        super().__init__()
+        self.bias = nn.Parameter(torch.tensor(0.))
+
+    def forward(self, x):
+        return F.relu(torch.abs(x) + self.bias) * torch.exp(1.j * torch.angle(x))
+
+
+def ComplexFeedForward(dim, mult = 4):
+    dim_inner = dim * mult
+    return nn.Sequential(
+        nn.Linear(dim, dim_inner, dtype = cfloat),
+        ModReLU(),
+        nn.Linear(dim_inner, dim, dtype = cfloat)
+    )
+
+# complex transformer
+
+class ComplexTransformer(Module):
+    def __init__(
+        self,
+        dim,
+        *,
+        depth,
+        causal = False,
+        dim_head = 32,
+        heads = 8,
+        ff_mult = 4
+    ):
+        super().__init__()
+
+        self.layers = ModuleList([])
+        for _ in range(depth):
+            self.layers.append(ModuleList([
+                ComplexRMSNorm(dim),
+                ComplexMultiheadAttention(dim = dim, dim_head = dim_head, heads = heads, causal = causal),
+                ComplexRMSNorm(dim),
+                ComplexFeedForward(dim = dim, mult = ff_mult)
+            ]))
+
+        self.norm = ComplexRMSNorm(dim)
+
+    def forward(self, x):
+
+        for attn_norm, attn, ff_norm, ff in self.layers:
+            x = attn(attn_norm(x)) + x
+            x = ff(ff_norm(x)) + x
+
+        return self.norm(x)
