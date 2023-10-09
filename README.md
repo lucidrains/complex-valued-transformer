@@ -1,3 +1,5 @@
+<img src="./complex-attention.png" width="350px"></img>
+
 ## Complex Valued Transformer (wip)
 
 Implementation of the transformer proposed in <a href="https://arxiv.org/abs/2306.09827">Building Blocks for a Complex-Valued Transformer Architecture</a>, plus a few other proposals from related papers. The full architecture will be evaluated on enwik8 character level language modeling as well as some algorithmic tasks (parity, binary addition).
