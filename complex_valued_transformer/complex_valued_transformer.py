@@ -132,8 +132,6 @@ class ComplexMultiheadAttention(Module):
         super().__init__()
         dim_inner = heads * dim_head
 
-        self.causal = causal
-
         self.to_q = nn.Linear(dim, dim_inner, bias = False, dtype = cfloat)
         self.to_kv = nn.Linear(dim, dim_inner * 2, bias = False, dtype = cfloat)
         self.to_out = nn.Linear(dim_inner, dim, bias = False, dtype = cfloat)
@@ -144,14 +142,25 @@ class ComplexMultiheadAttention(Module):
         self.split_heads = Rearrange('b n (h d) -> b h n d', h = heads)
         self.merge_heads = Rearrange('b h n d -> b n (h d)')
 
-    def forward(self, x, context = None, context_mask = None):
+    def forward(self, x, context = None, mask = None):
         has_context = exists(context)
         context = default(context, x)
 
         q, k, v = (self.to_q(x), *self.to_kv(context).chunk(2, dim = -1))
         q, k, v = map(self.split_heads, (q, k, v))
 
-        o = self.attend(q, k, v, mask = context_mask)
+        o = self.attend(q, k, v, mask = mask)
 
         o = self.merge_heads(o)
         return self.to_out(o)
+
+# rmsnorm
+
+class ComplexRMSNorm(Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.scale = dim ** -0.5
+        self.gamma = nn.Parameter(torch.ones(dim, dtype = cfloat))
+
+    def forward(self, x):
+        return F.normalize(x, dim = -1) * self.gamma * self.scale
