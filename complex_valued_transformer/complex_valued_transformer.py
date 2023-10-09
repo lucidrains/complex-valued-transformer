@@ -220,13 +220,13 @@ class ComplexTransformer(Module):
 
         self.to_logits = nn.Linear(dim, num_tokens, dtype = cfloat)
 
-    def forward(self, x):
+    def forward(self, x, context = None, mask = None):
 
         if self.has_embed:
             x = self.embed[x]
 
         for attn_norm, attn, ff_norm, ff in self.layers:
-            x = attn(attn_norm(x)) + x
+            x = attn(attn_norm(x), context = context, mask = mask) + x
             x = ff(ff_norm(x)) + x
 
         x = self.norm(x)
