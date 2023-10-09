@@ -1,4 +1,5 @@
 from typing import Optional
+from functools import partial
 
 import torch
 from torch import cfloat
@@ -7,20 +8,25 @@ from torch import nn, einsum, Tensor
 from torch.nn import Module
 
 from einops import rearrange, repeat, reduce
+from einops.layers.torch import Rearrange
 
 # helpers
 
 def exists(v):
     return v is not None
 
-# complex attention - Eilers et al
+def default(v, d):
+    return v if exists(v) else d
+
+# complex attention
 # https://arxiv.org/abs/2306.09827
 
-def eilers_complex_attention(
+def complex_attention_real(
     q: Tensor,
     k: Tensor,
     v: Tensor,
-    mask: Optional[Tensor] = None
+    mask: Optional[Tensor] = None,
+    causal = False
 ):
     """
     section 4.1 equation 8
@@ -37,9 +43,16 @@ def eilers_complex_attention(
     sim = einsum('b h i d, b h j d -> b h i j', q, k)
     sim = sim * scale
 
+    dtype = sim.dtype
+
     if exists(mask):
         mask = rearrange(mask, 'b j -> b 1 1 j')
-        sim = sim.masked_fill(~mask, -torch.finfo(sim.dtype).max)
+        sim = sim.masked_fill(~mask, -torch.finfo(dtype).max)
+
+    if causal:
+        i, j = sim.shape[-2:]
+        causal_mask = torch.ones((i, j), dtype = torch.bool, device = device).triu(j - i + 1)
+        sim = sim.masked_fill(causal_mask, -torch.finfo(dtype).max)
 
     attn = sim.softmax(dim = -1)
 
@@ -51,11 +64,12 @@ def eilers_complex_attention(
 # complex attention - Yang et al
 # https://arxiv.org/abs/1910.10202
 
-def yang_complex_attention(
+def complex_attention_complete(
     q: Tensor,
     k: Tensor,
     v: Tensor,
-    mask: Optional[Tensor] = None
+    mask: Optional[Tensor] = None,
+    causal = False
 ):
     """
     section 3.2 equation 3
@@ -83,6 +97,11 @@ def yang_complex_attention(
         mask = rearrange(mask, 'b j -> b 1 1 j')
         sim = sim.masked_fill(~mask, -torch.finfo(dtype).max)
 
+    if causal:
+        i, j = sim.shape[-2:]
+        causal_mask = torch.ones((i, j), dtype = torch.bool, device = device).triu(j - i + 1)
+        sim = sim.masked_fill(causal_mask, -torch.finfo(dtype).max)
+
     attn = sim.softmax(dim = -1)
 
     o = einsum('... i j, ... j d -> ... i d', attn, v)
@@ -97,3 +116,42 @@ def yang_complex_attention(
     o = reduce(o * sign, 'b h n d (c r) -> b h n d c', 'sum', c = 2)
 
     return torch.view_as_complex(o)
+
+# complex multihead attention
+
+class ComplexMultiheadAttention(Module):
+    def __init__(
+        self,
+        dim,
+        *,
+        causal = False,
+        dim_head = 32,
+        heads = 8,
+        complete_complex = False # whether to use complete complex formulation (Yang et al.) or just the real component, which reduces down to usual dot product on real and imaginary components flattened into the feature dimension
+    ):
+        super().__init__()
+        dim_inner = heads * dim_head
+
+        self.causal = causal
+
+        self.to_q = nn.Linear(dim, dim_inner, bias = False, dtype = cfloat)
+        self.to_kv = nn.Linear(dim, dim_inner * 2, bias = False, dtype = cfloat)
+        self.to_out = nn.Linear(dim_inner, dim, bias = False, dtype = cfloat)
+
+        attend = complex_attention_complete if complete_complex else complex_attention_real
+        self.attend = partial(attend, causal = causal)
+
+        self.split_heads = Rearrange('b n (h d) -> b h n d', h = heads)
+        self.merge_heads = Rearrange('b h n d -> b n (h d)')
+
+    def forward(self, x, context = None, context_mask = None):
+        has_context = exists(context)
+        context = default(context, x)
+
+        q, k, v = (self.to_q(x), *self.to_kv(context).chunk(2, dim = -1))
+        q, k, v = map(self.split_heads, (q, k, v))
+
+        o = self.attend(q, k, v, mask = context_mask)
+
+        o = self.merge_heads(o)
+        return self.to_out(o)
