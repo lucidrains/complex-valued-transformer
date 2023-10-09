@@ -27,12 +27,14 @@ def eilers_complex_attention(
     """
 
     assert all([t.dtype == cfloat for t in (q, k, v)])
+    q, k, v = [torch.view_as_real(t) for t in (q, k, v)]
+    q, k, v = map(lambda t: rearrange(t, '... d c -> ... (d c)'), (q, k, v))
 
     scale = q.shape[-1] ** -0.5
 
     # following eq 4
 
-    sim = einsum('b h i d c, b h j d c -> b h i j', torch.view_as_real(q), torch.view_as_real(k))
+    sim = einsum('b h i d, b h j d -> b h i j', q, k)
     sim = sim * scale
 
     if exists(mask):
@@ -41,9 +43,10 @@ def eilers_complex_attention(
 
     attn = sim.softmax(dim = -1)
 
-    attn = attn + 0j
     out = einsum('b h i j, b h j d -> b h i d', attn, v)
-    return out
+
+    out = rearrange(out, '... (d c) -> ... d c', c = 2)
+    return torch.view_as_complex(out)
 
 # complex attention - Yang et al
 # https://arxiv.org/abs/1910.10202
@@ -57,14 +60,17 @@ def yang_complex_attention(
     """
     section 3.2 equation 3
     """
-    device = q.device
+    batch, device = q.shape[0], q.device
 
     assert all([t.dtype == cfloat for t in (q, k, v)])
     q, k, v = [torch.view_as_real(t) for t in (q, k, v)]
 
-    q = repeat(q, 'b h n d c -> (r1 c r2) b h n d', r1 = 2, r2 = 2)
-    k = repeat(k, 'b h n d c -> (r c) b h n d', r = 4)
-    v = repeat(v, 'b h n d c -> (r c) b h n d', r = 4)
+    q = repeat(q, 'b h n d c -> (r1 c r2 b) h n d', r1 = 2, r2 = 2)
+    k = repeat(k, 'b h n d c -> (r c b) h n d', r = 4)
+    v = repeat(v, 'b h n d c -> (r c b) h n d', r = 4)
+
+    if exists(mask):
+        mask = repeat(mask, 'b ... -> (r b) ...', r = 8)
 
     scale = q.shape[-1] ** -0.5
 
@@ -74,12 +80,14 @@ def yang_complex_attention(
     dtype = sim.dtype
 
     if exists(mask):
-        mask = rearrange(mask, 'b j -> 1 b 1 1 j')
+        mask = rearrange(mask, 'b j -> b 1 1 j')
         sim = sim.masked_fill(~mask, -torch.finfo(dtype).max)
 
     attn = sim.softmax(dim = -1)
 
-    o = einsum('c ... i j, c ... j d -> ... i d c', attn, v)
+    o = einsum('... i j, ... j d -> ... i d', attn, v)
+
+    o = rearrange(o, '(r c b) ... -> b ... (c r)', r = 8, b = batch)
 
     sign = torch.tensor([
         1., -1., -1., -1.,   # real component
