@@ -10,6 +10,8 @@ from torch.nn import Module, ModuleList
 from einops import rearrange, repeat, reduce
 from einops.layers.torch import Rearrange
 
+from complex_valued_transformer.attend import Attend
+
 # helpers
 
 def exists(v):
@@ -34,8 +36,8 @@ def complex_attention_real(
     q: Tensor,
     k: Tensor,
     v: Tensor,
-    mask: Optional[Tensor] = None,
-    causal = False
+    attend: Attend,
+    mask: Optional[Tensor] = None
 ):
     """
     section 4.1 equation 8
@@ -45,27 +47,7 @@ def complex_attention_real(
     q, k, v = [torch.view_as_real(t) for t in (q, k, v)]
     q, k, v = map(lambda t: rearrange(t, '... d c -> ... (d c)'), (q, k, v))
 
-    scale = q.shape[-1] ** -0.5
-
-    # following eq 4
-
-    sim = einsum('b h i d, b h j d -> b h i j', q, k)
-    sim = sim * scale
-
-    dtype = sim.dtype
-
-    if exists(mask):
-        mask = rearrange(mask, 'b j -> b 1 1 j')
-        sim = sim.masked_fill(~mask, -torch.finfo(dtype).max)
-
-    if causal:
-        i, j = sim.shape[-2:]
-        causal_mask = torch.ones((i, j), dtype = torch.bool, device = device).triu(j - i + 1)
-        sim = sim.masked_fill(causal_mask, -torch.finfo(dtype).max)
-
-    attn = sim.softmax(dim = -1)
-
-    out = einsum('b h i j, b h j d -> b h i d', attn, v)
+    o = attend(q, k, v, mask = mask)
 
     out = rearrange(out, '... (d c) -> ... d c', c = 2)
     return torch.view_as_complex(out)
@@ -77,8 +59,8 @@ def complex_attention_complete(
     q: Tensor,
     k: Tensor,
     v: Tensor,
-    mask: Optional[Tensor] = None,
-    causal = False
+    attend: Attend,
+    mask: Optional[Tensor] = None
 ):
     """
     section 3.2 equation 3
@@ -95,32 +77,14 @@ def complex_attention_complete(
     if exists(mask):
         mask = repeat(mask, 'b ... -> (r b) ...', r = 8)
 
-    scale = q.shape[-1] ** -0.5
-
-    sim = einsum('... i d, ... j d -> ... i j', q, k)
-    sim = sim * scale
-
-    dtype = sim.dtype
-
-    if exists(mask):
-        mask = rearrange(mask, 'b j -> b 1 1 j')
-        sim = sim.masked_fill(~mask, -torch.finfo(dtype).max)
-
-    if causal:
-        i, j = sim.shape[-2:]
-        causal_mask = torch.ones((i, j), dtype = torch.bool, device = device).triu(j - i + 1)
-        sim = sim.masked_fill(causal_mask, -torch.finfo(dtype).max)
-
-    attn = sim.softmax(dim = -1)
-
-    o = einsum('... i j, ... j d -> ... i d', attn, v)
+    o = attend(q, k, v, mask = mask)
 
     o = rearrange(o, '(r c b) ... -> b ... (c r)', r = 8, b = batch)
 
     sign = torch.tensor([
         1., -1., -1., -1.,   # real component
         1.,  1.,  1., -1.    # imag component
-    ], dtype = dtype, device = device)
+    ], dtype = o.dtype, device = device)
 
     o = reduce(o * sign, 'b h n d (c r) -> b h n d c', 'sum', c = 2)
 
@@ -136,7 +100,8 @@ class ComplexMultiheadAttention(Module):
         causal = False,
         dim_head = 32,
         heads = 8,
-        complete_complex = False # whether to use complete complex formulation (Yang et al.) or just the real component, which reduces down to usual dot product on real and imaginary components flattened into the feature dimension
+        complete_complex = False, # whether to use complete complex formulation (Yang et al.) or just the real component, which reduces down to usual dot product on real and imaginary components flattened into the feature dimension
+        flash = False
     ):
         super().__init__()
         dim_inner = heads * dim_head
@@ -145,8 +110,14 @@ class ComplexMultiheadAttention(Module):
         self.to_kv = nn.Linear(dim, dim_inner * 2, bias = False, dtype = cfloat)
         self.to_out = nn.Linear(dim_inner, dim, bias = False, dtype = cfloat)
 
-        attend = complex_attention_complete if complete_complex else complex_attention_real
-        self.attend = partial(attend, causal = causal)
+        maybe_flash_attn = Attend(
+            causal = causal,
+            heads = heads,
+            flash = flash
+        )
+
+        complex_attention = complex_attention_complete if complete_complex else complex_attention_real
+        self.attend = partial(complex_attention, attend = maybe_flash_attn)
 
         self.split_heads = Rearrange('b n (h d) -> b h n d', h = heads)
         self.merge_heads = Rearrange('b h n d -> b n (h d)')
@@ -240,7 +211,8 @@ class ComplexTransformer(Module):
         ff_mult = 4,
         relu_squared = True,
         complete_complex = False,
-        rotary_emb = True
+        rotary_emb = True,
+        flash_attn = True
     ):
         super().__init__()
 
@@ -257,7 +229,7 @@ class ComplexTransformer(Module):
         for _ in range(depth):
             self.layers.append(ModuleList([
                 ComplexRMSNorm(dim),
-                ComplexMultiheadAttention(dim = dim, dim_head = dim_head, heads = heads, causal = causal, complete_complex = complete_complex),
+                ComplexMultiheadAttention(dim = dim, dim_head = dim_head, heads = heads, causal = causal, complete_complex = complete_complex, flash = flash_attn),
                 ComplexRMSNorm(dim),
                 ComplexFeedForward(dim = dim, mult = ff_mult, relu_squared = relu_squared)
             ]))
