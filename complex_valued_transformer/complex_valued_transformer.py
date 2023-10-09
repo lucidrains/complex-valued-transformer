@@ -142,12 +142,22 @@ class ComplexMultiheadAttention(Module):
         self.split_heads = Rearrange('b n (h d) -> b h n d', h = heads)
         self.merge_heads = Rearrange('b h n d -> b n (h d)')
 
-    def forward(self, x, context = None, mask = None):
+    def forward(
+        self,
+        x,
+        context = None,
+        mask = None,
+        rotary_emb = None
+    ):
         has_context = exists(context)
         context = default(context, x)
 
         q, k, v = (self.to_q(x), *self.to_kv(context).chunk(2, dim = -1))
         q, k, v = map(self.split_heads, (q, k, v))
+
+        if exists(rotary_emb):
+            q = q * rotary_emb
+            k = k * rotary_emb
 
         o = self.attend(q, k, v, mask = mask)
 
@@ -188,6 +198,24 @@ def ComplexFeedForward(dim, mult = 4, relu_squared = False):
         nn.Linear(dim_inner, dim, dtype = cfloat)
     )
 
+# rotary embeddings
+# formulated for complex numbers
+
+class RotaryEmbedding(Module):
+    def __init__(self, dim, base = 10000):
+        super().__init__()
+        inv_freq = 1.0 / (base ** (torch.arange(0, dim).float() / dim))
+        self.register_buffer('inv_freq', inv_freq)
+
+    @property
+    def device(self):
+        return self.inv_freq.device
+
+    def forward(self, seq_len):
+        t = torch.arange(seq_len, device = self.device).type_as(self.inv_freq)
+        freqs = einsum('i, j -> i j', t, self.inv_freq)
+        return torch.cos(freqs) + 1.j * torch.sin(freqs)
+
 # complex transformer
 
 class ComplexTransformer(Module):
@@ -202,7 +230,8 @@ class ComplexTransformer(Module):
         heads = 8,
         ff_mult = 4,
         relu_squared = True,
-        complete_complex = False
+        complete_complex = False,
+        rotary_emb = True
     ):
         super().__init__()
 
@@ -210,6 +239,10 @@ class ComplexTransformer(Module):
 
         if exists(num_tokens):
             self.embed = nn.Parameter(torch.randn((num_tokens, dim), dtype = cfloat))
+
+        self.rotary_emb = None
+        if rotary_emb:
+            self.rotary_emb = RotaryEmbedding(dim_head)
 
         self.layers = ModuleList([])
         for _ in range(depth):
@@ -225,12 +258,17 @@ class ComplexTransformer(Module):
         self.to_logits = nn.Linear(dim, num_tokens, dtype = cfloat)
 
     def forward(self, x, context = None, mask = None):
-
         if self.has_embed:
             x = self.embed[x]
 
+        seq_len = x.shape[-2]
+        rotary_emb = None
+
+        if exists(self.rotary_emb):
+            rotary_emb = self.rotary_emb(seq_len)
+
         for attn_norm, attn, ff_norm, ff in self.layers:
-            x = attn(attn_norm(x), context = context, mask = mask) + x
+            x = attn(attn_norm(x), context = context, mask = mask, rotary_emb = rotary_emb) + x
             x = ff(ff_norm(x)) + x
 
         x = self.norm(x)
