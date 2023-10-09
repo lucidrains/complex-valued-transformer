@@ -35,8 +35,9 @@ logits = transformer(ids) # (2, 1024, 256)
 
 ## Todo
 
+- [x] add rotary embeddings, formulated in complex domain
+
 - [ ] flash attention v1 compat
-- [ ] add rotary embeddings, formulated in complex domain
 - [ ] consider integrating with <a href="https://github.com/lucidrains/BS-RoFormer">BS-RoFormer</a>
 - [ ] craft a few algorithmic tasks, and explore layers that modulate rotations, see if giving that inductive bias makes a difference
 
