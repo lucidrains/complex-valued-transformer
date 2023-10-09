@@ -31,6 +31,12 @@ ids = torch.randint(0, 100, (2, 1024))
 logits = transformer(ids) # (2, 1024, 256)
 ```
 
+## Todo
+
+- [ ] flash attention v1 compat
+- [ ] add rotary embeddings, formulated in complex domain
+- [ ] consider integrating with <a href="https://github.com/lucidrains/BS-RoFormer">BS-RoFormer</a>
+
 ## Citations
 
 ```bibtex
