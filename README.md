@@ -28,7 +28,7 @@ transformer = ComplexTransformer(
     complete_complex = True
 )
 
-ids = torch.randint(0, 100, (2, 1024))
+ids = torch.randint(0, 256, (2, 1024))
 
 logits = transformer(ids) # (2, 1024, 256)
 ```
