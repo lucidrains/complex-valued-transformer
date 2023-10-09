@@ -44,7 +44,7 @@ def complex_attention_real(
     """
 
     assert all([t.dtype == cfloat for t in (q, k, v)])
-    q, k, v = [torch.view_as_real(t) for t in (q, k, v)]
+    q, k, v = map(torch.view_as_real, (q, k, v))
     q, k, v = map(lambda t: rearrange(t, '... d c -> ... (d c)'), (q, k, v))
 
     o = attend(q, k, v, mask = mask)
@@ -68,30 +68,32 @@ def complex_attention_complete(
     batch, device = q.shape[0], q.device
 
     assert all([t.dtype == cfloat for t in (q, k, v)])
-    q, k, v = [torch.view_as_real(t) for t in (q, k, v)]
+    q, k, v = map(torch.view_as_real, (q, k, v))
 
     # complex attention =    (MH(A, A, A) − MH(A, B, B) − MH(B, A, B) − MH(B, B, A))
     #                     + i(MH(A, A, B) + MH(A, B, A) + MH(B, A, A) − MH(B, B, B))
 
-    q = repeat(q, 'b h n d c -> (r1 c r2 b) h n d', r1 = 2, r2 = 2)
-    k = repeat(k, 'b h n d c -> (r c b) h n d', r = 4)
-
-    va, vb = rearrange(v, 'b h n d c -> c b h n d')
-    v = torch.cat((va, vb, vb, va, vb, va, va, vb))
+    q = repeat(q, 'b h n d c -> (c r b) h n d', r = 2)
+    k = repeat(k, 'b h n d c -> (r c b) h n d', r = 2)
+    v = repeat(v, 'b h n d c -> (r b) h n (d c)', r = 4)
 
     if exists(mask):
-        mask = repeat(mask, 'b ... -> (r b) ...', r = 8)
+        mask = repeat(mask, 'b ... -> (r b) ...', r = 4)
 
     o = attend(q, k, v, mask = mask)
 
-    o = rearrange(o, '(r c b) ... -> b ... (c r)', r = 8, b = batch)
+    o = rearrange(o, '(r b) ... (d c) -> (r c) b ... d', r = 4, c = 2)
+
+    indices = torch.tensor([0, 3, 5, 6, 1, 2, 4, 7], dtype = torch.long, device = device)
+
+    o = rearrange(o[indices], '(r c) ... -> ... c r', c = 2)
 
     sign = torch.tensor([
-        1., -1., -1., -1.,   # real component
-        1.,  1.,  1., -1.    # imag component
+        [1., -1., -1., -1.],   # real component
+        [1.,  1.,  1., -1.]    # imag component
     ], dtype = o.dtype, device = device)
 
-    o = reduce(o * sign, 'b h n d (c r) -> b h n d c', 'sum', c = 2)
+    o = (o * sign).sum(dim = -1)
 
     return torch.view_as_complex(o)
 
