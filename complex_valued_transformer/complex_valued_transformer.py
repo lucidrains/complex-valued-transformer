@@ -70,9 +70,14 @@ def complex_attention_complete(
     assert all([t.dtype == cfloat for t in (q, k, v)])
     q, k, v = [torch.view_as_real(t) for t in (q, k, v)]
 
+    # complex attention =    (MH(A, A, A) − MH(A, B, B) − MH(B, A, B) − MH(B, B, A))
+    #                     + i(MH(A, A, B) + MH(A, B, A) + MH(B, A, A) − MH(B, B, B))
+
     q = repeat(q, 'b h n d c -> (r1 c r2 b) h n d', r1 = 2, r2 = 2)
     k = repeat(k, 'b h n d c -> (r c b) h n d', r = 4)
-    v = repeat(v, 'b h n d c -> (r c b) h n d', r = 4)
+
+    va, vb = rearrange(v, 'b h n d c -> c b h n d')
+    v = torch.cat((va, vb, vb, va, vb, va, va, vb))
 
     if exists(mask):
         mask = repeat(mask, 'b ... -> (r b) ...', r = 8)
