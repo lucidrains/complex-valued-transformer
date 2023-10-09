@@ -4,6 +4,33 @@ Implementation of the transformer proposed in <a href="https://arxiv.org/abs/230
 
 Will not bother with complex layernorm, as RMS norm is now much more popular.
 
+## Install
+
+```bash
+$ pip install complex-valued-transformer
+```
+
+## Usage
+
+```python
+import torch
+from complex_valued_transformer import ComplexTransformer
+
+transformer = ComplexTransformer(
+    num_tokens = 256,
+    dim = 512,
+    depth = 4,
+    dim_head = 32,
+    heads = 8,
+    causal = True,
+    complete_complex = True
+)
+
+ids = torch.randint(0, 100, (2, 1024))
+
+logits = transformer(ids) # (2, 1024, 256)
+```
+
 ## Citations
 
 ```bibtex

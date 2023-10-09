@@ -193,28 +193,46 @@ class ComplexTransformer(Module):
         dim,
         *,
         depth,
+        num_tokens: Optional[int] = None,
         causal = False,
         dim_head = 32,
         heads = 8,
-        ff_mult = 4
+        ff_mult = 4,
+        complete_complex = False
     ):
         super().__init__()
+
+        self.has_embed = exists(num_tokens)
+
+        if exists(num_tokens):
+            self.embed = nn.Parameter(torch.randn((num_tokens, dim), dtype = cfloat))
 
         self.layers = ModuleList([])
         for _ in range(depth):
             self.layers.append(ModuleList([
                 ComplexRMSNorm(dim),
-                ComplexMultiheadAttention(dim = dim, dim_head = dim_head, heads = heads, causal = causal),
+                ComplexMultiheadAttention(dim = dim, dim_head = dim_head, heads = heads, causal = causal, complete_complex = complete_complex),
                 ComplexRMSNorm(dim),
                 ComplexFeedForward(dim = dim, mult = ff_mult)
             ]))
 
         self.norm = ComplexRMSNorm(dim)
 
+        self.to_logits = nn.Linear(dim, num_tokens, dtype = cfloat)
+
     def forward(self, x):
+
+        if self.has_embed:
+            x = self.embed[x]
 
         for attn_norm, attn, ff_norm, ff in self.layers:
             x = attn(attn_norm(x)) + x
             x = ff(ff_norm(x)) + x
 
-        return self.norm(x)
+        x = self.norm(x)
+
+        if not self.has_embed:
+            return x
+
+        logits = self.to_logits(x)
+        return logits
