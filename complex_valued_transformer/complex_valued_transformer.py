@@ -251,7 +251,8 @@ class ComplexTransformer(Module):
         context = None,
         mask = None,
         return_abs_logits = False,
-        return_angle_logits = False
+        return_angle_logits = False,
+        return_real_logits = False
     ):
         if self.has_embed:
             x = self.embed[x]
@@ -275,11 +276,13 @@ class ComplexTransformer(Module):
 
         # don't know the complex network literature well enough to know whether to choose abs or angle
 
-        assert not (return_abs_logits and return_angle_logits)
+        assert (int(return_abs_logits) + int(return_angle_logits) + int(return_real_logits)) <= 1
 
         if return_abs_logits:
             logits = logits.abs()
         elif return_angle_logits:
             logits = logits.angle()
+        elif return_real_logits:
+            logits = logits.real
 
         return logits

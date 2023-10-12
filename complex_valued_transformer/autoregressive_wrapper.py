@@ -55,7 +55,7 @@ class AutoregressiveWrapper(nn.Module):
 
         for _ in range(seq_len):
             logits = self.net(out[:, -self.seq_len:], **kwargs)[:, -1]
-            logits = logits.abs()
+            logits = logits.real
 
             filtered_logits = top_k(logits, thres = filter_thres)
             probs = F.softmax(filtered_logits / temperature, dim = -1)
@@ -68,5 +68,5 @@ class AutoregressiveWrapper(nn.Module):
     def forward(self, x, **kwargs):
         x, labels = x[:, :-1], x[:, 1:]
         logits = self.net(x, **kwargs)
-        logits = rearrange(logits.abs(), "b c n -> b n c")
+        logits = rearrange(logits.real, "b c n -> b n c")
         return F.cross_entropy(logits, labels)
