@@ -40,7 +40,8 @@ def decode_tokens(tokens):
 
 model = ComplexTransformer(
     num_tokens = 256,
-    dim = 512,
+    dim = 256,
+    dim_head = 32,
     depth = 8,
     causal = True,
     complete_complex = False # setting this to True would be ~8x MHA (Yang et al. paper)
