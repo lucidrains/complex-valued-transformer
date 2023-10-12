@@ -49,8 +49,8 @@ def complex_attention_real(
 
     o = attend(q, k, v, mask = mask)
 
-    out = rearrange(out, '... (d c) -> ... d c', c = 2)
-    return torch.view_as_complex(out)
+    o = rearrange(o, '... (d c) -> ... d c', c = 2)
+    return torch.view_as_complex(o)
 
 # complex attention - Yang et al
 # https://arxiv.org/abs/1910.10202
@@ -245,7 +245,14 @@ class ComplexTransformer(Module):
 
         self.to_logits = nn.Linear(dim, num_tokens, dtype = cfloat)
 
-    def forward(self, x, context = None, mask = None):
+    def forward(
+        self,
+        x,
+        context = None,
+        mask = None,
+        return_abs_logits = False,
+        return_angle_logits = False
+    ):
         if self.has_embed:
             x = self.embed[x]
 
@@ -265,4 +272,14 @@ class ComplexTransformer(Module):
             return x
 
         logits = self.to_logits(x)
+
+        # don't know the complex network literature well enough to know whether to choose abs or angle
+
+        assert not (return_abs_logits and return_angle_logits)
+
+        if return_abs_logits;
+            logits = logits.abs()
+        elif return_angle_logits:
+            logits = logits.angle()
+
         return logits
