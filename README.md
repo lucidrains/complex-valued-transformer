@@ -8,6 +8,8 @@ Will not bother with complex layernorm, as RMS norm is now much more popular.
 
 Update: It trains, seems to tolerate a much higher learning rate. Surprisingly stable, even when using softmax for complete complex formulation from Yang et al. This is likely because both papers are using the original transformer architecture with post-normalization instead of the recent pre-normalization.
 
+Update 2: No difference between Eilers (just real component) vs Yang (real and imaginary) complex attention, at least for enwik8
+
 ## Install
 
 ```bash
