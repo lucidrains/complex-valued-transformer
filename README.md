@@ -1,10 +1,12 @@
 <img src="./complex-attention.png" width="350px"></img>
 
-## Complex Valued Transformer (wip)
+## Complex Valued Transformer
 
 Implementation of the transformer proposed in <a href="https://arxiv.org/abs/2306.09827">Building Blocks for a Complex-Valued Transformer Architecture</a>, plus a few other proposals from related papers. The full architecture will be evaluated on enwik8 character level language modeling as well as some algorithmic tasks (parity, binary addition).
 
 Will not bother with complex layernorm, as RMS norm is now much more popular.
+
+Update: It trains, seems to tolerate a much higher learning rate. Surprisingly stable, even when using softmax for complete complex formulation from Yang et al. This is likely because both papers are using the original transformer architecture with post-normalization instead of the recent pre-normalization.
 
 ## Install
 
