@@ -9,6 +9,9 @@ from einops import rearrange
 def exists(val):
     return val is not None
 
+def identity(t):
+    return t
+
 def eval_decorator(fn):
     def inner(model, *args, **kwargs):
         was_training = model.training
@@ -33,11 +36,13 @@ class AutoregressiveWrapper(nn.Module):
         net,        
         seq_len,
         pad_value = 0,
+        logits_fn = identity
     ):
         super().__init__()
         self.seq_len = seq_len
         self.pad_value = pad_value
         self.net = net
+        self.logits_fn = logits_fn
 
     @torch.no_grad()
     @eval_decorator
@@ -55,7 +60,7 @@ class AutoregressiveWrapper(nn.Module):
 
         for _ in range(seq_len):
             logits = self.net(out[:, -self.seq_len:], **kwargs)[:, -1]
-            logits = logits.real
+            logits = self.logits_fn(logits)
 
             filtered_logits = top_k(logits, thres = filter_thres)
             probs = F.softmax(filtered_logits / temperature, dim = -1)
@@ -68,5 +73,5 @@ class AutoregressiveWrapper(nn.Module):
     def forward(self, x, **kwargs):
         x, labels = x[:, :-1], x[:, 1:]
         logits = self.net(x, **kwargs)
-        logits = rearrange(logits.real, "b c n -> b n c")
+        logits = rearrange(self.logits_fn(logits), "b c n -> b n c")
         return F.cross_entropy(logits, labels)

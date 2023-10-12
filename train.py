@@ -44,12 +44,13 @@ model = ComplexTransformer(
     dim_head = 32,
     depth = 8,
     causal = True,
-    complete_complex = False # setting this to True would be ~8x MHA (Yang et al. paper)
+    complete_complex = True # setting this to True would be ~8x MHA (Yang et al. paper)
 )
 
 model = AutoregressiveWrapper(
     model,
-    seq_len = SEQ_LEN
+    seq_len = SEQ_LEN,
+    logits_fn = lambda logits: logits.real
 ).cuda()
 
 # prepare enwik8 data
