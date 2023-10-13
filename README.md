@@ -10,6 +10,8 @@ Update: It trains, seems to tolerate a much higher learning rate. Surprisingly s
 
 Update 2: No difference between Eilers (just real component) vs Yang (real and imaginary) complex attention, at least for enwik8
 
+Update 3: I am not seeing anything remarkable. YMMV
+
 ## Install
 
 ```bash
